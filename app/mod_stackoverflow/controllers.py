@@ -1,68 +1,87 @@
 # Import flask dependencies
-from flask import Blueprint, render_template, request
-
-# StackExchange API key
-SE_API_KEY = "pXlviKYs*UZIwKLPwJGgpg(("
+from flask import Blueprint, render_template, request, make_response, current_app, redirect, session
 
 # Import module models
 from app.mod_stackoverflow.models import Posts
 
 # Import module stackapi
 from app.mod_stackapi.stackapi import StackAPI
+from app.mod_stackapi.stackapi import StackAPIError
+
+# Import module auth
+from app.mod_auth import OAuthSignIn
+
+# Import module utility
+from app.mod_utility import DictObjHelper
 
 # Define the blueprint: 'stackoverflow', set its url prefix: app.url/stackoverflow
 mod_stackoverflow = Blueprint('stackoverflow', __name__, url_prefix='/stackoverflow', static_folder='../../static', template_folder='../../templates')
 
+
 # Set the route and accepted methods
 @mod_stackoverflow.route('/', methods=['GET'])
-def defaultpage():
-    return render_template("stackoverflow/getposts.html")
+def default_page():
+    _uid = DictObjHelper.get_value(session, 'uid', '')
+    return render_template('stackoverflow/getposts.html', uid=_uid)
+
+
+@mod_stackoverflow.route('/authorize')
+def oauth_authorize():
+    oauth = OAuthSignIn.get_provider('stackoverflow')
+    return oauth.authorize()
+
+
+@mod_stackoverflow.route('/callback/<provider>')
+def oauth_callback(provider):
+    _oauth = OAuthSignIn.get_provider(provider)
+    _access_token = _oauth.callback()
+    _user_id = 0
+    try:
+        SITE = StackAPI('stackoverflow', key=current_app.config['SE_API_KEY'], access_token=_access_token)
+        _res = SITE.fetch('me', order='desc')
+        _items = DictObjHelper.get_value(_res, 'items', None)
+        if _items is not None and len(_items) > 0:
+            _user_id = DictObjHelper.get_value(_items[0], 'user_id', 0)
+    except StackAPIError as e:
+        pass
+
+    session['uid'] = str(_user_id)
+    return redirect('stackoverflow/')
+
 
 @mod_stackoverflow.route('/getposts', methods=['POST'])
-def getposts():
+def get_posts():
+    _uid = DictObjHelper.get_value(request.form, 'uid', None)
+    _query_pos = DictObjHelper.get_value(request.form, 'querypos', 0)
+    _page_size = DictObjHelper.get_value(request.form, 'pagesize', 0)
+    _max_pages = DictObjHelper.get_value(request.form, 'maxpages', 0)
 
-    if 'uid' in request.form:
-        _uid = request.form['uid']
-    else:
-        _uid = None
-    if 'querypos' in request.form:
-        _query_pos = request.form['querypos']
-    else:
-        _query_pos = None
-    if 'pagesize' in request.form:
-        _page_size = request.form['pagesize']
-    else:
-        _page_size = None
-    if 'maxpages' in request.form:
-        _max_pages = request.form['maxpages']
-    else:
-        _max_pages = None
-
-    if _query_pos is None or _query_pos < 0:
+    if _query_pos <= 0:
         _query_pos = 1
 
-    if _page_size is None or _page_size <= 0 or _page_size > 100:
+    if _page_size <= 0 or _page_size > 100:
         _page_size = 10
 
-    if _max_pages is None or _max_pages <= 0 or _max_pages > 10:
-        _max_pages = 2
+    if _max_pages <= 0 or _max_pages > 10:
+        _max_pages = 1
 
     _page = int((_query_pos - 1) / _page_size) + 1
     _itempos = int((_query_pos - 1) % _page_size)
 
-    # validate the received values
-    if _uid is None or len(_uid) <= 0:
-        return Posts(404, "no_method", "no method found with this name").toJSON()
+    try:
+        SITE = StackAPI('stackoverflow', key=current_app.config['SE_API_KEY'])
+        SITE.page_size=_page_size
+        SITE.max_pages=_max_pages
+        _res = SITE.fetch('users/'+str(_uid)+'/posts', page=_page, order='desc', sort='activity', filter=current_app.config['FILTER_TITLE_BODY'])
 
-    SITE = StackAPI('stackoverflow', key=SE_API_KEY)
-    SITE.page_size=_page_size
-    SITE.max_pages=_max_pages
-    _res = SITE.fetch('users/'+_uid+'/posts', page=_page, order='desc', sort='activity')
+        _posts = Posts.load(_res, _itempos)
 
-    _posts = Posts.load(_res, _itempos)
-
-    if hasattr(_posts, 'items'):
-        _posts.query_pos = _query_pos
+        if hasattr(_posts, 'items'):
+            _posts.query_pos = _query_pos
+    except StackAPIError as e:
+        return make_response(Posts.error(e.error, e.code, e.message).toJSON(), e.error)
+    except:
+        return make_response(Posts.error(500, "internal_error", "unknown error").toJSON(), 500)
 
     return _posts.toJSON()
 

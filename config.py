@@ -21,7 +21,24 @@ CSRF_ENABLED     = False
 
 # Use a secure, unique and absolutely secret key for
 # signing the data. 
-CSRF_SESSION_KEY = "OLEGBATUROV_KEY"
+CSRF_SESSION_KEY = "TOPCODER_KEY"
 
 # Secret key for signing cookies
-SECRET_KEY = "OLEGBATUROV_KEY"
+SECRET_KEY = "TOPCODER_KEY"
+
+# StackExchange API key
+#SE_API_KEY = "pXlviKYs*UZIwKLPwJGgpg(("
+SE_API_KEY = "STfed*aS9LYUSEFMNwALZQ(("
+
+# StackExchange Get Posts Api filter
+FILTER_TITLE_BODY = "!-*f(6qnw-e4e" # Include title and body
+
+STACKOVERFLOW_CLIENT_ID = 11156
+STACKOVERFLOW_CLIENT_SECRET = "VBIfdwwTXnk4at2v6LVPUw(("
+
+OAUTH_CREDENTIALS={
+        'stackoverflow': {
+            'id': STACKOVERFLOW_CLIENT_ID,
+            'secret': STACKOVERFLOW_CLIENT_SECRET
+        }
+}
